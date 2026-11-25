@@ -1,0 +1,1138 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Kinosia · prototype de la forme filaire</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700&family=Plus+Jakarta+Sans:wght@400;500;700&family=Poppins:wght@700&display=swap" rel="stylesheet">
+<style>
+/*
+ * Prototype autonome : il reprend les couleurs, les polices et les textes de la maquette (dépôt Agence-RJS/stefka)
+ * pour juger UNE chose, le trajet de la forme filaire : sphère, bras robotique, drone, retour à la sphère.
+ * Trois couches : fonds des blocs (z 0), canvas de la forme (z 1), textes (z 2). La forme passe donc SOUS le texte.
+ */
+:root {
+  --duck-950: #072c36; --duck-900: #0b3c49; --duck-800: #124b59; --duck-700: #1f5f6e; --duck-50: #f0f5f5;
+  --lime: #c5f04a; --orange: #ff8a3d; --ink: #0f1a1c; --muted: #4d5c5f;
+  /* Dérivées, pour que le sélecteur de palette puisse tout changer : accent éclairci, et deux couleurs en composantes pour les transparences. */
+  --lime-clair: #d6f57e; --lime-rvb: 197 240 74; --nuit: 7 44 54;
+  --filet: color-mix(in oklab, var(--ink) 14%, transparent);
+  --rayon: 36px;
+}
+* { box-sizing: border-box; }
+html { background: #fff; color: var(--ink); scroll-behavior: smooth; }
+body { margin: 0; font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif; overflow-x: clip; -webkit-font-smoothing: antialiased; }
+.display { font-family: "Bricolage Grotesque", "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif; font-weight: 700; letter-spacing: -0.02em; line-height: 1.07; margin: 0; }
+a { color: inherit; }
+
+#forme { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; }
+.fond { position: absolute; inset: 0; z-index: 0; }
+.contenu { position: relative; z-index: 2; }
+section { position: relative; }
+[data-ancre] { pointer-events: none; }
+
+/* En-tête */
+header { position: fixed; inset: 0 0 auto 0; z-index: 10; background: #fff; }
+header .barre { max-width: 1320px; margin: 0 auto; height: 72px; padding: 0 28px; display: flex; align-items: center; justify-content: space-between; }
+/* Logo : i sans point (ı) + un point dessiné, vert pour le premier i, orange pour le second. */
+.logo { font-family: "Poppins", ui-sans-serif, system-ui, sans-serif; font-weight: 700; font-size: 1.7rem; letter-spacing: -0.02em; line-height: 1; color: var(--duck-900); text-decoration: none; display: inline-block; }
+.logo .i { position: relative; display: inline-block; line-height: 1; }
+.logo .i::after { content: ""; position: absolute; left: 50%; top: 0.045em; width: 0.192em; height: 0.192em; margin-left: -0.096em; border-radius: 50%; background: var(--lime); }
+.logo .i.o::after { background: var(--orange); }
+.logo.geant { font-size: clamp(4.5rem, 19vw, 17rem); letter-spacing: -0.04em; display: block; text-align: center; margin-top: 46px; }
+.puce { width: 12px; height: 12px; border-radius: 50%; background: var(--lime); box-shadow: 0 0 0 2px var(--duck-900); display: inline-block; flex: none; }
+nav { display: flex; align-items: center; gap: 28px; font-weight: 500; color: var(--muted); }
+nav a { text-decoration: none; display: inline-flex; align-items: center; gap: 9px; }
+/* Mêmes pastilles que les deux points de la forme : vert pour le conseil, orange pour la formation, cerclées de canard. */
+nav .pt { width: 9px; height: 9px; box-shadow: 0 0 0 1.5px var(--duck-900); }
+.bouton { display: inline-flex; align-items: center; padding: 14px 22px; border-radius: 999px; font-weight: 700; text-decoration: none; background: var(--duck-900); color: #fff; font-size: 0.95rem; }
+.bouton.clair { background: #fff; color: var(--duck-900); padding: 16px 28px; font-size: 1rem; }
+.bouton.contour { background: transparent; color: var(--ink); border: 1px solid var(--filet); }
+/*
+ * Survol des boutons, dans le langage du site : le bouton « se dessine ».
+ *   1. un contour fin se trace tout autour, comme un trait de plan (dégradé conique animé par --trace) ;
+ *   2. une couleur balaie le fond de gauche à droite ;
+ *   3. le libellé roule d'une ligne et une flèche arrive ;
+ *   4. le bouton suit légèrement le curseur (effet d'aimant, posé par le script : --ax, --ay).
+ * Même effet au clavier (focus visible). Rien de tout cela sur écran tactile ni en mouvement réduit.
+ */
+@property --trace { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+.bouton { position: relative; isolation: isolate; --trait: var(--duck-900); --balai: var(--duck-700); --ax: 0px; --ay: 0px;
+  transform: translate(var(--ax), var(--ay)); transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1), color 0.3s; }
+.bouton.clair { --trait: var(--lime); --balai: var(--lime); }
+.bouton.contour { --trait: var(--duck-900); --balai: var(--duck-900); }
+.bouton::before { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; background: var(--balai);
+  clip-path: inset(0 100% 0 0 round 999px); transition: clip-path 0.45s cubic-bezier(0.7, 0, 0.2, 1); }
+.bouton::after { content: ""; position: absolute; inset: -7px; border-radius: 999px; padding: 1.5px; pointer-events: none;
+  background: conic-gradient(from -90deg, var(--trait) var(--trace), transparent 0);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  transition: --trace 0.7s cubic-bezier(0.65, 0, 0.2, 1); }
+.b-txt { display: inline-grid; overflow: hidden; height: 1.35em; line-height: 1.35em; transition: transform 0.4s cubic-bezier(0.7, 0, 0.2, 1); }
+.b-txt > span { grid-area: 1 / 1; transition: transform 0.45s cubic-bezier(0.7, 0, 0.2, 1); }
+.b-txt > span + span { transform: translateY(100%); }
+.b-fl { position: absolute; right: 13px; top: 50%; width: 14px; height: 14px; margin-top: -7px; opacity: 0; transform: translateX(-10px); transition: opacity 0.3s, transform 0.4s cubic-bezier(0.7, 0, 0.2, 1); }
+.b-fl svg { display: block; width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+@media (hover: hover) {
+  .bouton:hover::after, .bouton:focus-visible::after { --trace: 360deg; }
+  .bouton:hover::before, .bouton:focus-visible::before { clip-path: inset(0 0 0 0 round 999px); }
+  .bouton:hover .b-txt, .bouton:focus-visible .b-txt { transform: translateX(-9px); }
+  .bouton:hover .b-txt > span, .bouton:focus-visible .b-txt > span { transform: translateY(-100%); }
+  .bouton:hover .b-txt > span + span, .bouton:focus-visible .b-txt > span + span { transform: translateY(0); }
+  .bouton:hover .b-fl, .bouton:focus-visible .b-fl { opacity: 1; transform: translateX(0); }
+  .bouton.contour:hover, .bouton.contour:focus-visible { color: #fff; }
+  .niche a:hover { background: var(--lime-clair); }
+  .niche a:hover .p-fl { transform: rotate(45deg); }
+}
+.bouton:focus-visible { outline: none; }
+@media (prefers-reduced-motion: reduce) {
+  .bouton, .bouton::before, .bouton::after, .b-txt, .b-txt > span, .b-fl, .niche a, .niche a .p-fl, .niche a .p-lib { transition: none; animation: none; }
+}
+
+
+main { padding: 0 20px; }
+.conteneur { max-width: 1280px; margin: 0 auto; padding: 0 40px; position: relative; }
+
+/* Bloc canard à encoches (hero et contact) */
+.bloc { max-width: 1280px; margin: 0 auto; position: relative; }
+.bloc > .fond, .carte > .fond {
+  border-radius: var(--rayon);
+  background:
+    radial-gradient(55% 65% at 90% 0%, color-mix(in oklab, var(--lime) 10%, transparent), transparent 70%),
+    radial-gradient(50% 60% at 0% 100%, color-mix(in oklab, var(--duck-700) 65%, transparent), transparent 75%),
+    var(--duck-900);
+}
+.etiquette { position: absolute; top: 0; left: 0; z-index: 2; background: #fff; padding: 14px 16px 16px 4px; border-bottom-right-radius: 22px; font-weight: 700; display: flex; align-items: center; gap: 10px; white-space: nowrap; }
+.coin { position: absolute; z-index: 2; width: 28px; height: 28px; }
+/* Coins arrondis de l'encoche : accrochés à l'étiquette elle-même, avec 1 px de recouvrement pour qu'aucun filet n'apparaisse à la jointure. */
+.etiquette::before, .etiquette::after { content: ""; position: absolute; pointer-events: none; background: radial-gradient(circle at 100% 100%, transparent 21.5px, #fff 22px); }
+.etiquette::after { left: calc(100% - 1px); top: 0; width: 23px; height: 22px; }
+.etiquette::before { left: 0; top: calc(100% - 1px); width: 22px; height: 23px; }
+.niche { position: absolute; right: 0; bottom: 0; z-index: 3; width: var(--encoche, 120px); height: 120px; transition: width 0.55s cubic-bezier(0.7, 0, 0.2, 1); background: #fff; border-top-left-radius: var(--rayon); display: grid; place-items: end; }
+/* La pastille : un disque au repos, qui se déroule vers la gauche en bouton « Prendre rendez-vous » quand on la survole dans le hero. */
+.niche a { position: absolute; right: 0; bottom: 0; height: 88px; min-width: 88px; border-radius: 999px; background: var(--lime); display: flex; align-items: center; justify-content: flex-end; text-decoration: none; color: var(--duck-950); font-weight: 700; transition: background 0.3s; }
+.niche a .p-fl { flex: none; width: 88px; text-align: center; font-size: 1.5rem; transition: transform 0.4s cubic-bezier(0.7, 0, 0.2, 1); }
+.niche a .p-lib { max-width: 0; opacity: 0; overflow: hidden; white-space: nowrap; font-size: 1.08rem; padding-left: 0; transition: max-width 0.55s cubic-bezier(0.7, 0, 0.2, 1), padding-left 0.55s cubic-bezier(0.7, 0, 0.2, 1), opacity 0.25s; }
+@keyframes pouls { 0% { box-shadow: 0 0 0 0 rgb(var(--lime-rvb) / 0.6); } 100% { box-shadow: 0 0 0 18px rgb(var(--lime-rvb) / 0); } }
+.coin.bd-g { right: var(--encoche, 120px); bottom: 0; background: radial-gradient(circle at 0 0, transparent 27.5px, #fff 28px); transition: right 0.55s cubic-bezier(0.7, 0, 0.2, 1); }
+.coin.bd-h { right: 0; bottom: 120px; background: radial-gradient(circle at 0 0, transparent 27.5px, #fff 28px); }
+
+/* Hero */
+#hero { padding-top: 96px; }
+/* Photo de fond du bloc : l'usine et son bras à gauche, la zone calme à droite pour le texte. Un léger voile canard assure le contraste du texte. */
+#hero .bloc > .fond { overflow: hidden; background: var(--duck-900); }
+#hero .bloc > .fond::before { content: ""; position: absolute; inset: 0; background: url("img/kinosia-hero-usine-bras-robotique.jpg") left center / cover no-repeat; transform-origin: 24% 46%; transition: transform 1.4s cubic-bezier(0.2, 0.7, 0.2, 1); }
+#hero .bloc > .fond::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, rgb(var(--nuit) / 0.1) 0%, rgb(var(--nuit) / 0.38) 46%, rgb(var(--nuit) / 0.5) 100%); transition: opacity 0.8s; }
+
+/*
+ * Second état du hero, déclenché par la pastille : tout le contenu change et devient une invitation à agir.
+ * Chaque ligne du titre roule vers sa remplaçante, le surtitre et le texte se croisent, la photo avance,
+ * le bouton s'allume et la sphère s'active (voir « elan » dans le script de la forme).
+ */
+.duo { display: grid; }
+.duo > span { grid-area: 1 / 1; transition: opacity 0.35s, transform 0.55s cubic-bezier(0.7, 0, 0.2, 1); }
+.duo > .b { opacity: 0; transform: translateY(14px); }
+.roule .lg { display: grid; overflow: hidden; line-height: 1.05; }
+.roule .lg > span { grid-area: 1 / 1; white-space: nowrap; transition: transform 0.7s cubic-bezier(0.7, 0, 0.2, 1); }
+/* Les questions du second état : un peu plus petites que le titre, pour tenir sur trois lignes quelle que soit leur longueur. */
+.roule .lg > .b { transform: translateY(105%); font-size: 0.82em; align-self: center; }
+.roule .lg > .b.la { transform: none; }
+.roule .lg > .b.parti { transform: translateY(-105%); }
+.roule .lg:nth-child(2) > span { transition-delay: 0.06s; }
+.roule .lg:nth-child(3) > span { transition-delay: 0.12s; }
+#hero.elan .duo > .a { opacity: 0; transform: translateY(-12px); }
+#hero.elan .duo > .b { opacity: 1; transform: none; transition-delay: 0.12s; }
+#hero.elan .roule .lg > .a { transform: translateY(-105%); }
+#hero.elan .bloc > .fond::before { transform: scale(1.07); }
+#hero.elan .bloc > .fond::after { opacity: 0.72; }
+/* Le bouton du hero s'efface : dans le second état, c'est la pastille qui porte l'action, là où se trouve déjà le curseur. */
+#hero .bouton.clair { transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1), color 0.3s, opacity 0.3s; }
+#hero.elan .bouton.clair { opacity: 0; pointer-events: none; }
+#hero.elan .niche a { background: var(--lime-clair); animation: pouls 1.6s ease-out infinite; }
+#hero.elan .niche a .p-lib { max-width: 360px; opacity: 1; padding-left: 36px; transition: max-width 0.55s cubic-bezier(0.7, 0, 0.2, 1), padding-left 0.55s cubic-bezier(0.7, 0, 0.2, 1), opacity 0.3s 0.18s; }
+#hero.elan .niche a .p-fl { transform: rotate(45deg); }
+@media (prefers-reduced-motion: reduce) { .niche, .coin.bd-g { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .duo > span, .roule .lg > span, #hero .bloc > .fond::before, #hero .bloc > .fond::after { transition: none; } }
+#hero .contenu { min-height: min(700px, calc(100svh - 8rem)); display: grid; grid-template-columns: 0.8fr 1.2fr; align-items: center; color: #fff; }
+#hero .texte { grid-column: 2; padding: 96px 48px 96px 0; }
+.surtitre { font-weight: 700; color: var(--lime); font-size: 0.95rem; margin: 0; text-transform: uppercase; letter-spacing: 0.09em; }
+#hero h1 { font-size: clamp(3.3rem, 8vw, 7.4rem); line-height: 0.98; letter-spacing: -0.012em; margin-top: 22px; }
+#hero p.chapeau { margin: 30px 0 0; max-width: 34em; font-size: clamp(1rem, 1.35vw, 1.2rem); font-weight: 500; line-height: 1.6; }
+.legende { margin: 34px 0 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 10px 26px; font-size: 0.92rem; color: color-mix(in oklab, #fff 78%, transparent); }
+.legende li { display: flex; align-items: center; gap: 9px; }
+.legende b { color: #fff; font-weight: 700; }
+.pt { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex: none; }
+.pt.lime { background: var(--lime); } .pt.orange { background: var(--orange); }
+/* La sphère est plus grande que sa place : elle sort du bloc par la gauche et par le bas. */
+#hero [data-ancre] { position: absolute; left: -4%; top: 50%; transform: translateY(-52%); width: min(51%, 630px); aspect-ratio: 1; }
+
+/* Méthode : le bras robotique vit à gauche, sous le texte. Colonnes sans fond, pour ne pas le masquer. */
+#methode { padding: 190px 0 110px; }
+.repere { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 0.95rem; margin: 0; }
+.repere span { color: var(--muted); font-weight: 500; }
+.repere::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--duck-900); }
+#methode h2 { font-size: clamp(1.9rem, 3.5vw, 3rem); max-width: 22ch; margin: 22px 0 0 auto; }
+#methode .tete { display: grid; grid-template-columns: 0.62fr 3fr; }
+#methode .tete > div { grid-column: 2; }
+.axes { margin: 72px 0 0; padding: 0; list-style: none; display: grid; grid-template-columns: 0.62fr 1fr 1fr 1fr; gap: 36px; }
+.axes li:first-child { grid-column: 2; }
+.axes li { border-top: 1px solid var(--ink); padding-top: 18px; }
+.axes .num { font-size: 0.9rem; font-weight: 700; color: var(--muted); }
+.axes h3 { font-size: 1.6rem; margin: 26px 0 0; }
+.axes p { color: var(--muted); line-height: 1.6; margin: 14px 0 0; }
+.relier { margin-top: 90px; display: grid; grid-template-columns: 0.62fr 1.6fr 1.4fr; gap: 36px; align-items: end; }
+.relier h3 { grid-column: 2; font-size: clamp(1.7rem, 2.6vw, 2.4rem); }
+.relier p { color: var(--muted); line-height: 1.6; margin: 0 0 18px; }
+.ancre-bras { position: absolute; left: -20px; top: 60px; bottom: 0; width: 52%; z-index: 0; }
+.ancre-bras > div { position: sticky; top: 13vh; height: 78vh; }
+
+/* Offres : le drone plane au-dessus des deux cartes. */
+#offres { padding: 60px 0 140px; }
+#offres h2 { font-size: clamp(1.9rem, 3.5vw, 3rem); max-width: 17ch; margin-top: 22px; }
+.cartes { margin-top: 120px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.carte { position: relative; color: #fff; }
+.carte > .fond { border-radius: 28px; background: var(--duck-950); }
+.carte .contenu { padding: 32px 40px 40px; }
+/* Visuel en bandeau en haut de chaque carte : au niveau du texte, donc le drone passe derrière la photo, jamais sur un visage. */
+.carte .visuel { position: relative; z-index: 2; display: block; width: 100%; height: auto; aspect-ratio: 3 / 1; object-fit: cover; border-radius: 28px 28px 0 0; }
+.carte .public { font-size: 0.9rem; font-weight: 700; color: var(--lime); margin: 0; }
+.carte.formation .public { color: var(--orange); }
+.carte h3 { font-size: 2.1rem; margin: 22px 0 0; }
+.carte p.accroche { color: color-mix(in oklab, #fff 74%, transparent); line-height: 1.6; max-width: 30em; }
+.etapes { display: flex; flex-wrap: wrap; gap: 8px 22px; margin: 26px 0 0; padding: 22px 0 0; list-style: none; border-top: 1px solid color-mix(in oklab, #fff 16%, transparent); font-weight: 700; font-size: 0.95rem; }
+.etapes span { color: var(--lime); font-weight: 700; margin-right: 8px; font-size: 0.8rem; }
+.carte.formation .etapes span { color: var(--orange); }
+#offres [data-ancre] { position: absolute; right: 2%; top: -80px; width: 46%; height: 380px; }
+
+/* Contact : retour à la sphère. */
+#contact { padding-bottom: 24px; }
+/*
+ * Bloc contact. Trois idées :
+ *   1. Stefka est au centre : son portrait rond est posé au cœur de la sphère arrivée à maturité (642 points), qui tourne autour d'elle ;
+ *   2. une seule action : la pastille, déroulée en permanence dans une encoche élargie, porte « On attaque le marché ensemble ? »,
+ *      juste sous le texte (portrait à gauche, texte à droite, comme dans le hero) ;
+ *   3. rien d'encadré : le nom, le titre et les valeurs sont posés à plat, sans carte.
+ */
+#contact .contenu { color: #fff; display: grid; grid-template-columns: 0.9fr 1.1fr; gap: 56px; align-items: center; padding: 104px 64px 92px; }
+#contact .c-personne { order: 1; }
+#contact .c-texte { order: 2; padding-bottom: 84px; }
+#contact h2 { font-size: clamp(2.7rem, 6.4vw, 5.8rem); line-height: 0.98; letter-spacing: -0.012em; }
+#contact .c-texte p { color: color-mix(in oklab, #fff 78%, transparent); max-width: 25em; line-height: 1.6; font-size: 1.12rem; margin: 26px 0 0; }
+#contact .c-bouton { display: none; }
+.c-personne { margin: 0; display: grid; justify-items: center; text-align: center; }
+.c-orbite { position: relative; width: min(100%, 372px); aspect-ratio: 1; }
+.c-orbite [data-ancre] { position: absolute; inset: 0; }
+.c-orbite .portrait { position: absolute; left: 50%; top: 50%; width: 47%; height: 47%; transform: translate(-50%, -50%); border-radius: 50%; object-fit: cover; object-position: 50% 20%; box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.7), 0 0 0 10px rgb(var(--nuit) / 0.6); }
+.c-personne figcaption { display: grid; justify-items: center; gap: 6px; margin-top: -4px; max-width: 30em; }
+.c-personne figcaption > span:not(.c-valeurs) { max-width: 23em; }
+.c-personne b { font-size: 1.75rem; }
+.c-personne figcaption > span:not(.c-valeurs) { color: color-mix(in oklab, #fff 78%, transparent); line-height: 1.5; }
+/* Les cinq valeurs : séparées par de l'espace seulement, pour pouvoir passer à la ligne proprement. */
+.c-personne .c-valeurs { margin-top: 14px; display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 18px; font-size: 0.76rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--lime); }
+.c-lien { margin-top: 14px; color: #fff; font-weight: 700; text-decoration: none; padding-bottom: 3px; border-bottom: 1px solid rgba(255, 255, 255, 0.4); transition: border-color 0.2s, color 0.2s; }
+.c-lien:hover, .c-lien:focus-visible { color: var(--lime); border-bottom-color: var(--lime); outline: none; }
+/* Sur grand écran, la pastille du contact est déroulée en permanence : c'est le seul bouton du bloc. */
+@media (min-width: 861px) {
+  #contact .niche a .p-lib { max-width: 360px; opacity: 1; padding-left: 36px; }
+  #contact .niche a .p-fl { transform: rotate(45deg); }
+  #contact .niche a:hover .p-fl, #contact .niche a:focus-visible .p-fl { transform: rotate(45deg) translateY(-5px); }
+}
+
+footer { max-width: 1280px; margin: 0 auto; padding: 36px 40px 70px; color: var(--muted); font-size: 0.9rem; overflow: hidden; }
+
+
+/* Panneau de prise de rendez-vous : il glisse depuis la droite, le site reste visible derrière. */
+#rdv { margin: 0 0 0 auto; width: min(540px, 100vw); height: 100dvh; max-width: none; max-height: none; border: 0; padding: 0; background: var(--duck-950); color: #fff; overflow: auto; transform: translateX(100%); transition: transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1); }
+#rdv.ouvert { transform: none; }
+#rdv::backdrop { background: rgb(var(--nuit) / 0); transition: background 0.4s; }
+#rdv.ouvert::backdrop { background: rgb(var(--nuit) / 0.62); }
+.rdv-fermer { position: absolute; top: 20px; right: 20px; width: 44px; height: 44px; border-radius: 50%; border: 1px solid rgba(255, 255, 255, 0.28); background: transparent; color: #fff; font-size: 1.05rem; cursor: pointer; transition: background 0.2s, color 0.2s; }
+.rdv-fermer:hover, .rdv-fermer:focus-visible { background: var(--lime); color: var(--duck-950); outline: none; }
+.rdv-corps { padding: 88px 44px 48px; }
+#rdv h2 { font-size: clamp(2rem, 4.4vw, 2.9rem); margin-top: 16px; }
+.rdv-intro { color: rgba(255, 255, 255, 0.74); line-height: 1.6; margin: 16px 0 30px; }
+.champ { display: block; margin-top: 22px; font-size: 0.85rem; font-weight: 700; color: rgba(255, 255, 255, 0.76); }
+.champ small { font-weight: 500; color: rgba(255, 255, 255, 0.5); font-size: inherit; }
+.champ input, .champ textarea { display: block; width: 100%; margin-top: 6px; padding: 10px 0 12px; background: transparent; border: 0; border-bottom: 1px solid rgba(255, 255, 255, 0.3); border-radius: 0; color: #fff; font: 500 1.05rem "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif; outline: none; transition: border-color 0.2s, box-shadow 0.2s; }
+.champ textarea { min-height: 92px; resize: vertical; }
+.champ input:focus, .champ textarea:focus { border-bottom-color: var(--lime); box-shadow: 0 1px 0 var(--lime); }
+.pot { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+#rdv .bouton { margin-top: 36px; border: 0; cursor: pointer; font-family: inherit; }
+.rdv-merci p { color: rgba(255, 255, 255, 0.74); line-height: 1.6; }
+@media (max-width: 860px) { .rdv-corps { padding: 80px 24px 40px; } }
+@media (prefers-reduced-motion: reduce) { #rdv, #rdv::backdrop { transition: none; } }
+
+/*
+ * Palettes de la maquette. Hors palette d'origine :
+ *   - la photo du hero garde sa lumière et prend la teinte de la palette (fusion en luminosité sur une couleur de fond) ;
+ *   - les deux visuels des offres passent en deux tons, faute de pouvoir recolorer leurs personnages : ils seront à régénérer dans la palette retenue.
+ */
+html[data-palette]:not([data-palette="canard"]) #hero .bloc > .fond::before { background-color: var(--duck-700); background-blend-mode: luminosity; }
+html[data-palette]:not([data-palette="canard"]) .carte .visuel { mix-blend-mode: luminosity; }
+/* Changement de palette : la nouvelle couleur s'ouvre en cercle depuis l'endroit du clic. */
+::view-transition-old(root), ::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+
+/* Menu « Couleurs maquette », sous « À propos » */
+.menu { position: relative; display: inline-flex; }
+.palette { position: absolute; top: 100%; right: -24px; padding-top: 16px; opacity: 0; visibility: hidden; transform: translateY(6px); transition: opacity 0.22s, transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), visibility 0s 0.22s; }
+.menu:hover .palette, .menu:focus-within .palette { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
+.pal-carte { display: block; width: 290px; background: #fff; border-radius: 20px; padding: 18px 12px 12px; box-shadow: 0 18px 50px rgb(var(--nuit) / 0.2), 0 0 0 1px rgb(var(--nuit) / 0.08); color: var(--ink); }
+.pal-titre { margin: 0 8px 4px; font-size: 0.74rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--duck-900); }
+.pal-aide { margin: 0 8px 10px; font-size: 0.82rem; font-weight: 500; color: var(--muted); line-height: 1.4; }
+.pal-choix { display: flex; align-items: center; gap: 12px; width: 100%; padding: 9px 8px; border: 0; border-radius: 12px; background: transparent; font: 700 0.92rem "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif; color: var(--ink); text-align: left; cursor: pointer; transition: background 0.2s; }
+.pal-choix:hover, .pal-choix:focus-visible { background: var(--duck-50); outline: none; }
+.pal-choix .pastilles { display: flex; flex: none; }
+.pal-choix .pastilles i { width: 22px; height: 22px; border-radius: 50%; margin-left: -7px; box-shadow: 0 0 0 2px #fff; }
+.pal-choix .pastilles i:first-child { margin-left: 0; }
+.pal-choix .coche { margin-left: auto; width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; font-size: 0.7rem; color: #fff; background: var(--duck-900); opacity: 0; transform: scale(0.6); transition: opacity 0.2s, transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.pal-choix[aria-pressed="true"] .coche { opacity: 1; transform: none; }
+@media (prefers-reduced-motion: reduce) { .palette, .pal-choix .coche { transition: none; } }
+
+/* Infobulle des deux points d'accent */
+.ancre-tel { display: none; }
+#bulle { position: fixed; z-index: 5; left: 0; top: 0; padding: 9px 14px; border-radius: 999px; background: #fff; color: var(--ink); font-size: 0.86rem; font-weight: 700; white-space: nowrap; box-shadow: 0 6px 24px rgb(var(--nuit) / 0.22); pointer-events: none; opacity: 0; transition: opacity 0.2s; display: flex; align-items: center; gap: 8px; }
+#bulle.vue { opacity: 1; }
+#bulle span { font-weight: 500; color: var(--muted); }
+
+.note { position: fixed; left: 16px; bottom: 16px; z-index: 20; background: var(--ink); color: #fff; font-size: 0.78rem; padding: 9px 14px; border-radius: 999px; opacity: 0.86; }
+
+/* Écrans moyens : la sphère se resserre pour laisser le grand titre respirer. */
+@media (max-width: 1180px) { #hero [data-ancre] { width: 44%; left: -5%; } }
+@media (max-width: 860px) {
+  nav a:not(.bouton), nav .menu { display: none; }
+  main { padding: 0 12px; }
+  .conteneur { padding: 0 14px; }
+  :root { --rayon: 24px; }
+  #hero { padding-top: 84px; }
+  #hero .contenu { display: block; min-height: 0; }
+  #hero .texte { padding: 76px 22px 0; }
+  .surtitre { font-size: 0.8rem; letter-spacing: 0.07em; }
+  /* Téléphone : la forme a sa propre place, entre les textes. Elle ne passe plus dessous. */
+  /* Téléphone : le texte passe sur la photo, le voile est donc plus dense en haut. */
+  #hero .bloc > .fond::before { background-position: 12% center; }
+  #hero .bloc > .fond::after { background: linear-gradient(180deg, rgb(var(--nuit) / 0.82) 0%, rgb(var(--nuit) / 0.6) 55%, rgb(var(--nuit) / 0.35) 100%); }
+  #hero .bloc { display: flex; flex-direction: column; }
+  #hero .contenu { order: 1; }
+  #hero [data-ancre] { order: 2; position: relative; left: auto; top: auto; transform: none; width: 84%; margin: 18px 0 -58px -7%; }
+  header .barre { padding: 0 16px; } header .bouton { padding: 10px 14px; font-size: 0.8rem; } header .logo { font-size: 1.45rem; }
+  .niche { width: var(--encoche, 84px); height: 84px; } .niche a { height: 60px; min-width: 60px; } .niche a .p-fl { width: 60px; font-size: 1.1rem; }
+  .coin.bd-g { right: var(--encoche, 84px); } .coin.bd-h { bottom: 84px; }
+  #methode { padding: 120px 0 70px; }
+  #methode .tete, .axes, .relier { display: block; }
+  #methode h2 { margin-left: 0; }
+  .ancre-bras { display: none; }
+  .ancre-tel { display: block; height: 320px; margin: 18px 0 0 -8%; }
+  .axes { margin-top: 26px; } .axes li { margin-top: 30px; }
+  .relier { margin-top: 56px; } .relier p { margin-top: 16px; }
+  #offres { padding: 30px 0 80px; }
+  #offres [data-ancre] { position: relative; right: auto; top: auto; width: 100%; height: 230px; margin-top: 10px; }
+  .cartes { grid-template-columns: 1fr; margin-top: 10px; }
+  .carte .contenu { padding: 28px 24px; }
+  #contact .contenu { display: block; padding: 84px 22px 116px; }
+  #contact .c-bouton { display: block; margin: 30px 0 0; }
+  #contact .c-texte { padding-bottom: 0; }
+  .c-personne { margin-top: 44px; }
+  .c-orbite { width: 82%; }
+  .note { font-size: 0.7rem; }
+}
+</style>
+</head>
+<body>
+
+<canvas id="forme" aria-hidden="true"></canvas>
+<div id="bulle" aria-hidden="true"></div>
+
+<header>
+  <div class="barre">
+    <a class="logo" href="#hero" aria-label="Kinosia">K<span class="i">ı</span>nos<span class="i o">ı</span>a</a>
+    <nav><a href="#methode"><i class="pt lime"></i>Conseil</a><a href="#offres"><i class="pt orange"></i>Formation</a><span class="menu"><a href="#contact" aria-haspopup="true">À propos</a><span class="palette"><span class="pal-carte" role="group" aria-label="Couleurs de la maquette"><span class="pal-titre" style="display:block">Couleurs maquette</span><span class="pal-aide" style="display:block">Choisissez une palette, tout le site change.</span><span id="pal-liste" style="display:block"></span></span></span></span><a class="bouton" href="#contact" data-rdv aria-haspopup="dialog">Parlons de votre projet</a></nav>
+  </div>
+</header>
+
+<main>
+  <section id="hero" data-forme="sphere">
+    <div class="bloc">
+      <div class="fond" data-sombre="36"></div>
+      <div class="etiquette">Diagnostic · Conception · Déploiement</div>
+      <div data-ancre></div>
+      <div class="contenu">
+        <div class="texte">
+          <!-- Deux états : A au repos, B quand on survole la pastille (ou qu'on y arrive au clavier). En B, le titre fait défiler des questions de dirigeant (posées par le script) et la pastille porte l'invitation. -->
+          <p class="surtitre duo"><span class="a">Conseil en croissance · PME tech</span><span class="b" aria-hidden="true">Parlons de votre projet</span></p>
+          <h1 class="display roule" aria-label="Dessinons votre croissance.">
+            <span class="lg"><span class="a">Dessinons</span></span>
+            <span class="lg"><span class="a">votre</span></span>
+            <span class="lg"><span class="a">croissance.</span></span>
+          </h1>
+          <p class="chapeau duo"><span class="a">Pour les CEO de PME tech de 20 à 200 salariés en transition&nbsp;: diagnostic, nouveau modèle, déploiement jusqu'à l'autonomie.</span><span class="b" aria-hidden="true">Un premier échange pour poser votre situation et voir comment avancer.</span></p>
+          <p style="margin:36px 0 0"><a class="bouton clair" href="#contact" data-rdv aria-haspopup="dialog">Prendre rendez-vous</a></p>
+        </div>
+      </div>
+      <div class="niche"><a href="#contact" data-elan data-rdv aria-haspopup="dialog" aria-label="On attaque le marché ensemble ? Prendre rendez-vous"><span class="p-lib" aria-hidden="true">On attaque le marché ensemble&nbsp;?</span><span class="p-fl" aria-hidden="true">↗</span></a></div>
+      <i class="coin bd-g"></i><i class="coin bd-h"></i>
+    </div>
+  </section>
+
+  <section id="methode" data-forme="bras">
+    <div class="ancre-bras"><div data-ancre></div></div>
+    <div class="conteneur contenu">
+      <div class="tete"><div>
+        <p class="repere"><span>01</span>La méthode</p>
+        <h2 class="display" style="margin-left:0">Dans une PME Tech, la technique, le commercial et la direction regardent rarement le même tableau.</h2>
+        <div class="ancre-tel" data-ancre></div>
+      </div></div>
+      <ol class="axes">
+        <li><span class="num">01</span><h3 class="display">Technologie</h3><p>Ce que votre robot, votre logiciel ou votre drone change chez le client, dit dans les termes qu'un acheteur industriel ou public sait défendre en interne.</p></li>
+        <li><span class="num">02</span><h3 class="display">Marché</h3><p>Qui achète, qui décide, qui peut bloquer. Les cycles sont longs et les décideurs nombreux&nbsp;: il faut choisir les segments où votre offre gagne vraiment.</p></li>
+        <li><span class="num">03</span><h3 class="display">Croissance</h3><p>Le modèle commercial, l'équipe et les priorités. Un plan à 90 jours pour démarrer, des progrès mesurés ensuite.</p></li>
+      </ol>
+      <div class="relier">
+        <h3 class="display">Relier les trois, pour décider et agir.</h3>
+        <div><p>Une fois les trois alignés, les arbitrages se simplifient&nbsp;: vous savez quoi vendre, à qui, et avec quels moyens.</p><a class="bouton contour" href="#offres">Voir les offres</a></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="offres" data-forme="drone">
+    <div class="conteneur">
+      <div data-ancre></div>
+      <div class="contenu">
+        <p class="repere"><span>02</span>Offres</p>
+        <h2 class="display">Conseil pour la direction, formation pour les équipes.</h2>
+      </div>
+      <div class="cartes">
+        <div class="carte conseil">
+          <div class="fond" data-sombre="28"></div>
+          <img class="visuel" src="img/kinosia-conseil-dirigeant.jpg" width="1800" height="600" loading="lazy" decoding="async" alt="Un dirigeant écoute, pensif, la consultante assise face à lui et vue de dos.">
+          <div class="contenu">
+            <p class="public">Pour la direction</p>
+            <h3 class="display">Conseil</h3>
+            <p class="accroche">Du diagnostic au nouveau cap, en trois étapes que vous pouvez engager séparément.</p>
+            <ul class="etapes"><li><span>01</span>Diagnostiquer</li><li><span>02</span>Concevoir</li><li><span>03</span>Déployer</li></ul>
+          </div>
+        </div>
+        <div class="carte formation">
+          <div class="fond" data-sombre="28"></div>
+          <img class="visuel" src="img/kinosia-formation-equipe.jpg" width="1800" height="600" loading="lazy" decoding="async" alt="Cinq membres d'une équipe commerciale échangent autour d'une table, devant un écran de résultats.">
+          <div class="contenu">
+            <p class="public">Pour les équipes commerciales</p>
+            <h3 class="display">Formation</h3>
+            <p class="accroche">Deux parcours appliqués à une affaire ou un compte réel, avec un suivi sur le terrain.</p>
+            <ul class="etapes"><li><span>01</span>Ventes complexes B2B</li><li><span>02</span>Comptes stratégiques</li></ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="contact" data-forme="retour">
+    <div class="bloc">
+      <div class="fond" data-sombre="36"></div>
+      <div class="etiquette">Contact</div>
+      <div class="contenu">
+        <div class="c-texte">
+          <h2 class="display">Parlons de votre projet.</h2>
+          <p>Un premier échange pour poser votre situation et voir comment avancer.</p>
+          <!-- Bouton visible sur téléphone seulement : sur grand écran, c'est la pastille déroulée qui porte l'action. -->
+          <p class="c-bouton"><a class="bouton clair" href="#contact" data-rdv aria-haspopup="dialog">On attaque le marché ensemble&nbsp;?</a></p>
+        </div>
+        <figure class="c-personne">
+          <div class="c-orbite">
+            <div data-ancre></div>
+            <img class="portrait" src="img/stefka-barzakova-portrait.jpg" width="524" height="524" loading="lazy" decoding="async" alt="Portrait de Stefka Barzakova">
+          </div>
+          <figcaption>
+            <b class="display">Stefka Barzakova</b>
+            <span>Experte en développement commercial de solutions technologiques B2B</span>
+            <span class="c-valeurs"><span>Écoute</span><span>Intégrité</span><span>Clarté</span><span>Persévérance</span><span>Autonomie</span></span>
+            <a class="c-lien" href="https://www.linkedin.com/in/stefkabarzakova" target="_blank" rel="noopener noreferrer">Son profil LinkedIn <span aria-hidden="true">↗</span></a>
+          </figcaption>
+        </figure>
+      </div>
+      <div class="niche"><a href="#contact" data-rdv aria-haspopup="dialog" aria-label="On attaque le marché ensemble ? Prendre rendez-vous"><span class="p-lib" aria-hidden="true">On attaque le marché ensemble&nbsp;?</span><span class="p-fl" aria-hidden="true">↗</span></a></div>
+      <i class="coin bd-g"></i><i class="coin bd-h"></i>
+    </div>
+  </section>
+</main>
+
+<footer>Prototype de travail. Textes et couleurs repris de la maquette, enjeux et preuves non reproduits ici.
+  <div class="logo geant" aria-hidden="true">K<span class="i">ı</span>nos<span class="i o">ı</span>a</div>
+</footer>
+
+<dialog id="rdv" aria-labelledby="rdv-titre">
+  <button type="button" class="rdv-fermer" aria-label="Fermer">✕</button>
+  <div class="rdv-corps">
+    <p class="surtitre">Parlons de votre projet</p>
+    <h2 id="rdv-titre" class="display">On attaque le marché ensemble&nbsp;?</h2>
+    <form id="rdv-form">
+      <p class="rdv-intro">Un premier échange pour poser votre situation et voir comment avancer.</p>
+      <label class="champ">Nom et prénom<input name="nom" type="text" autocomplete="name" required></label>
+      <label class="champ">Société <small>(facultatif)</small><input name="societe" type="text" autocomplete="organization"></label>
+      <label class="champ">E-mail professionnel<input name="email" type="email" autocomplete="email" required></label>
+      <label class="champ">Téléphone <small>(facultatif)</small><input name="telephone" type="tel" autocomplete="tel"></label>
+      <label class="champ">Votre situation en quelques mots <small>(facultatif)</small><textarea name="situation" rows="3"></textarea></label>
+      <label class="pot" aria-hidden="true">Site web<input name="site_web" type="text" tabindex="-1" autocomplete="off"></label>
+      <button class="bouton clair" type="submit">Envoyer ma demande</button>
+    </form>
+    <div class="rdv-merci" hidden>
+      <p class="rdv-intro">Bien reçu, merci.</p>
+      <p>Ceci est un prototype : aucune demande n'est envoyée pour l'instant.</p>
+    </div>
+  </div>
+</dialog>
+<div class="note">Prototype · 42 points</div>
+
+<script>
+(() => {
+  "use strict";
+  const TAU = Math.PI * 2;
+  const borne = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+  const lisse = (x) => x * x * (3 - 2 * x);
+  const mix = (a, b, k) => a + (b - a) * k;
+  const suivre = (dt, v) => 1 - Math.exp(-dt * v);
+  const norm = ([x, y, z]) => { const l = Math.hypot(x, y, z) || 1; return [x / l, y / l, z / l]; };
+
+  /*
+   * L'idée : la forme GAGNE des points à chaque étape, c'est la croissance qui se voit.
+   *   sphère du hero : 42 points   →   bras robotique : 423   →   drone : 553   →   sphère du contact : 642.
+   * Les 642 points existent dès le départ (sphère géodésique subdivisée trois fois). Ceux qui ne sont pas encore
+   * « nés » sont invisibles, posés sur la forme en cours : ils en sortent quand l'étape suivante les appelle.
+   */
+
+  /* ---------- 1. Les deux sphères : 42 sommets / 120 arêtes au départ, 642 sommets / 1 920 arêtes à l'arrivée ---------- */
+  function geodesiques() {
+    const phi = (1 + Math.sqrt(5)) / 2;
+    const V = [[-1, phi, 0], [1, phi, 0], [-1, -phi, 0], [1, -phi, 0], [0, -1, phi], [0, 1, phi], [0, -1, -phi], [0, 1, -phi],
+      [phi, 0, -1], [phi, 0, 1], [-phi, 0, -1], [-phi, 0, 1]].map(norm);
+    const F = [[0, 11, 5], [0, 5, 1], [0, 1, 7], [0, 7, 10], [0, 10, 11], [1, 5, 9], [5, 11, 4], [11, 10, 2], [10, 7, 6], [7, 1, 8],
+      [3, 9, 4], [3, 4, 2], [3, 2, 6], [3, 6, 8], [3, 8, 9], [4, 9, 5], [2, 4, 11], [6, 2, 10], [8, 6, 7], [9, 8, 1]];
+    const cle = (a, b) => (a < b ? a + "_" + b : b + "_" + a);
+    const subdiviser = (faces) => {
+      const milieux = new Map(), A = new Set(), F2 = [];
+      const milieu = (a, b) => {
+        const k = cle(a, b);
+        if (!milieux.has(k)) { V.push(norm([V[a][0] + V[b][0], V[a][1] + V[b][1], V[a][2] + V[b][2]])); milieux.set(k, V.length - 1); }
+        return milieux.get(k);
+      };
+      for (const [a, b, c] of faces) {
+        const ab = milieu(a, b), bc = milieu(b, c), ca = milieu(c, a);
+        for (const [p, q] of [[a, ab], [ab, b], [b, bc], [bc, c], [c, ca], [ca, a], [ab, bc], [bc, ca], [ca, ab]]) A.add(cle(p, q));
+        F2.push([a, ab, ca], [ab, b, bc], [ca, bc, c], [ab, bc, ca]);
+      }
+      return { F: F2, A: [...A].map((s) => s.split("_").map(Number)) };
+    };
+    const n1 = subdiviser(F);
+    const nb1 = V.length; // 42
+    const n2 = subdiviser(n1.F);
+    const n3 = subdiviser(n2.F);
+    return { V, A1: n1.A, A2: n3.A, nb1 };
+  }
+  const GEO = geodesiques();
+  const N = GEO.V.length; // 642
+  const LIME = 1, ORANGE = 4; // points d'accent : conseil et formation
+
+  const amplitude = (t) => { const k = 0.5 + 0.5 * Math.sin(t * 0.35); return 0.15 * k * k * (3 - 2 * k); };
+  const respiration = ([x, y, z], t, amp) => 1 + amp * 1.6 * Math.sin(3.1 * x + t * 0.9) * Math.sin(2.7 * y + t * 0.6) * Math.cos(2.3 * z + t * 0.5);
+
+  /* ---------- Petit atelier de dessin : on pose des points, on tire des traits ---------- */
+  // avecTraits = false : on ne recalcule que les points (à chaque image), les traits sont connus une fois pour toutes.
+  function atelier(avecTraits) {
+    const P = [], A = [];
+    const pt = (x, y, z) => P.push([x, y, z]) - 1;
+    const rien = () => {};
+    const ar = avecTraits ? (a, b) => { A.push([a, b]); } : rien;
+    const boucle = avecTraits ? (ids) => ids.forEach((id, k) => ar(id, ids[(k + 1) % ids.length])) : rien;
+    const chaine = avecTraits ? (ids) => { for (let k = 0; k < ids.length - 1; k++) ar(ids[k], ids[k + 1]); } : rien;
+    const lier = avecTraits ? (a, b) => a.forEach((id, k) => ar(id, b[k])) : rien;
+    // Volume de révolution : un profil [distance sur l'axe, rayon] tourné autour d'un axe. C'est lui qui donne les cylindres maillés.
+    const tourner = (C, axe, u, v, profil, seg) => profil.map(([d, r]) => Array.from({ length: seg }, (_, k) => {
+      const a = k * TAU / seg, ca = Math.cos(a) * r, sa = Math.sin(a) * r;
+      return pt(C[0] + axe[0] * d + u[0] * ca + v[0] * sa, C[1] + axe[1] * d + u[1] * ca + v[1] * sa, C[2] + axe[2] * d + u[2] * ca + v[2] * sa);
+    }));
+    // Peau d'un volume : chaque anneau fermé, et des génératrices d'un anneau au suivant.
+    const peau = (anneaux) => { anneaux.forEach(boucle); for (let i = 0; i < anneaux.length - 1; i++) lier(anneaux[i], anneaux[i + 1]); return anneaux; };
+    // Câble : courbe de Bézier souple en n points.
+    const cable = (a, b, c, n) => {
+      const ids = [];
+      for (let k = 0; k < n; k++) { const s = k / (n - 1), x = (1 - s) * (1 - s), y = 2 * s * (1 - s), z = s * s; ids.push(pt(x * a[0] + y * b[0] + z * c[0], x * a[1] + y * b[1] + z * c[1], x * a[2] + y * b[2] + z * c[2])); }
+      chaine(ids);
+    };
+    return { P, A, pt, ar, boucle, chaine, lier, tourner, peau, cable };
+  }
+  const AX = [1, 0, 0], AY = [0, 1, 0], AZ = [0, 0, 1];
+
+  /* ---------- 2. Le bras robotique industriel : 423 points ---------- */
+  const L1 = 1.0, L2 = 0.86, EPAULE = [0, 0.62];
+  const PRISE = 0.66; // distance du poignet au bout de l'outil, le long de l'avant-bras
+  // Cinématique inverse à deux segments : où sont le coude et le poignet pour que le poignet atteigne la cible.
+  function resoudre(cible) {
+    const [sx, sy] = EPAULE;
+    let vx = cible[0] - sx, vy = cible[1] - sy;
+    const d0 = Math.hypot(vx, vy) || 1e-3;
+    const d = borne(d0, 0.5, L1 + L2 - 0.04);
+    vx /= d0; vy /= d0;
+    const coude = Math.acos(borne((L1 * L1 + d * d - L2 * L2) / (2 * L1 * d), -1, 1));
+    const t1 = Math.atan2(vy, vx) + coude; // coude vers le haut
+    const E = [sx + L1 * Math.cos(t1), sy + L1 * Math.sin(t1)];
+    const W = [sx + d * vx, sy + d * vy];
+    const fx = W[0] - E[0], fy = W[1] - E[1], fl = Math.hypot(fx, fy) || 1;
+    return { E, W, t1, f: [fx / fl, fy / fl] };
+  }
+  // Le bout de l'outil prolonge l'avant-bras : on cherche le poignet qui l'amène sur le point visé.
+  function poignetPour(vise) {
+    const dx = vise[0] - EPAULE[0], dy = vise[1] - EPAULE[1], dd = Math.hypot(dx, dy) || 1;
+    let W = [vise[0] - (dx / dd) * PRISE, vise[1] - (dy / dd) * PRISE];
+    for (let i = 0; i < 6; i++) { const r = resoudre(W); W = [vise[0] - r.f[0] * PRISE, vise[1] - r.f[1] * PRISE]; }
+    return [W[0], Math.max(W[1], 0.3)];
+  }
+  function brasForme(cible, avecTraits) {
+    const o = atelier(avecTraits), { pt, ar, boucle, lier, tourner, peau, cable } = o;
+    const [sx, sy] = EPAULE;
+    const { E, W, t1, f } = resoudre(cible);
+    const n1 = [-Math.sin(t1), Math.cos(t1)], n2 = [-f[1], f[0]];
+    const entre = (a, b, k) => [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k];
+    // Socle : embase large, col, fût (5 anneaux de 14 points)
+    peau(tourner([0, 0, 0], AY, AX, AZ, [[0, 0.62], [0.07, 0.62], [0.1, 0.46], [0.3, 0.42], [0.34, 0.34]], 14));
+    // Articulation d'épaule : un gros disque vu de côté, avec ses deux flasques (4 × 14)
+    const ep = peau(tourner([sx, sy, 0], AZ, AX, AY, [[-0.3, 0.19], [-0.22, 0.27], [0.22, 0.27], [0.3, 0.19]], 14));
+    // Axe de l'épaule, sur le flasque côté visible : il porte le point vert.
+    const epaule = pt(sx, sy, -0.31); for (const k of [0, 3, 7, 10]) ar(epaule, ep[0][k]);
+    // Bloc moteur accolé à l'épaule (3 × 10)
+    peau(tourner([sx - 0.36, sy + 0.02, 0], AZ, AX, AY, [[0.02, 0.11], [0.3, 0.11], [0.35, 0.07]], 10));
+    // Bras et avant-bras : poutres à huit pans, cinq cadres chacune
+    const cadre = (C, n, h, w) => [[h, 0.55 * w], [0.55 * h, w], [-0.55 * h, w], [-h, 0.55 * w], [-h, -0.55 * w], [-0.55 * h, -w], [0.55 * h, -w], [h, -0.55 * w]]
+      .map(([a, b]) => pt(C[0] + n[0] * a, C[1] + n[1] * a, b));
+    const poutre = (A0, B0, n, h0, h1, w0, w1) => {
+      const cadres = [0.14, 0.33, 0.52, 0.71, 0.9].map((k, i) => cadre(entre(A0, B0, k), n, mix(h0, h1, i / 4), mix(w0, w1, i / 4)));
+      cadres.forEach(boucle); for (let i = 0; i < 4; i++) lier(cadres[i], cadres[i + 1]);
+    };
+    poutre(EPAULE, E, n1, 0.17, 0.125, 0.15, 0.115);
+    // Articulation du coude (4 × 14)
+    const co = peau(tourner([E[0], E[1], 0], AZ, AX, AY, [[-0.26, 0.14], [-0.19, 0.2], [0.19, 0.2], [0.26, 0.14]], 14));
+    // Axe du coude, lui aussi côté visible : il porte le point orange.
+    const coude = pt(E[0], E[1], -0.27); for (const k of [0, 3, 7, 10]) ar(coude, co[0][k]);
+    poutre(E, W, n2, 0.12, 0.085, 0.12, 0.09);
+    // Poignet (4 × 12)
+    peau(tourner([W[0], W[1], 0], AZ, AX, AY, [[-0.2, 0.1], [-0.14, 0.14], [0.14, 0.14], [0.2, 0.1]], 12));
+    // Outil : une broche dans l'axe de l'avant-bras, qui s'affine jusqu'à la pointe (6 × 10), puis le bout, qui suit le curseur
+    peau(tourner([W[0], W[1], 0], [f[0], f[1], 0], [n2[0], n2[1], 0], AZ, [[0.16, 0.1], [0.2, 0.13], [0.42, 0.13], [0.46, 0.09], [0.58, 0.06], [0.62, 0.03]], 10));
+    const prise = pt(W[0] + f[0] * PRISE, W[1] + f[1] * PRISE, 0);
+    // Deux faisceaux de câbles, de l'épaule au coude puis du coude au poignet (2 × 10)
+    const M1 = entre(EPAULE, E, 0.5), M2 = entre(E, W, 0.5);
+    cable([sx - 0.3, sy + 0.1, 0.3], [M1[0] + n1[0] * 0.45, M1[1] + n1[1] * 0.45, 0.34], [E[0] + n1[0] * 0.2, E[1] + n1[1] * 0.2, 0.28], 10);
+    cable([E[0] + n2[0] * 0.2, E[1] + n2[1] * 0.2, 0.28], [M2[0] + n2[0] * 0.36, M2[1] + n2[1] * 0.36, 0.3], [W[0] + n2[0] * 0.14, W[1] + n2[1] * 0.14, 0.2], 10);
+    // Les deux points de couleur marquent les deux axes de rotation du bras (épaule et coude). Le bout de l'outil, lui, reste neutre.
+    return { P: o.P, A: o.A, lime: epaule, orange: coude };
+  }
+
+  /* ---------- 3. Le drone : 553 points ---------- */
+  function droneForme(t, avecTraits) {
+    const o = atelier(avecTraits), { pt, ar, boucle, chaine, lier, tourner, peau } = o;
+    // Fuselage : une coque profilée, aplatie, le nez vers l'avant (7 × 12)
+    peau(tourner([0, 0, 0], AZ, AX, [0, 0.62, 0], [[-0.5, 0.06], [-0.42, 0.2], [-0.2, 0.3], [0.05, 0.33], [0.3, 0.28], [0.46, 0.17], [0.55, 0.05]], 12));
+    const moyeux = [];
+    [45, 135, 225, 315].forEach((deg, i) => {
+      const a = deg * TAU / 360, c = Math.cos(a), s = Math.sin(a), R = 1.05, M = [R * c, 0.02, R * s];
+      // Bras : tube à six pans, quatre cadres (24)
+      const cadres = [0.3, 0.52, 0.74, 0.94].map((k, j) => { const r = mix(0.055, 0.04, j / 3); return Array.from({ length: 6 }, (_, q) => { const b = q * TAU / 6; return pt(c * R * k - s * Math.cos(b) * r, 0.02 + Math.sin(b) * r, s * R * k + c * Math.cos(b) * r); }); });
+      cadres.forEach(boucle); for (let j = 0; j < 3; j++) lier(cadres[j], cadres[j + 1]);
+      // Moteur (4 × 10) et moyeu (1)
+      const mot = peau(tourner(M, AY, AX, AZ, [[-0.1, 0.07], [-0.06, 0.1], [0.08, 0.1], [0.12, 0.05]], 10));
+      const moyeu = pt(M[0], M[1] + 0.15, M[2]); for (const k of [0, 3, 5, 8]) ar(moyeu, mot[3][k]);
+      // Carénage d'hélice : un cercle de 20 points, tenu par quatre haubans
+      const car = Array.from({ length: 20 }, (_, k) => pt(M[0] + 0.47 * Math.cos(k * TAU / 20), M[1] + 0.15, M[2] + 0.47 * Math.sin(k * TAU / 20))); boucle(car);
+      for (const k of [0, 3, 5, 8]) ar(mot[2][k], car[k * 2]);
+      // Deux pales qui tournent (8)
+      const rot = (i % 2 ? -1 : 1) * t * 9;
+      for (const b of [0, Math.PI]) {
+        const q = (ang, r) => pt(M[0] + r * Math.cos(rot + b + ang), M[1] + 0.15, M[2] + r * Math.sin(rot + b + ang));
+        const p1 = q(0.5, 0.07), p2 = q(0.2, 0.42), p3 = q(-0.06, 0.42), p4 = q(-0.5, 0.07);
+        boucle([p1, p2, p3, p4]); ar(moyeu, p1); ar(moyeu, p4);
+      }
+      moyeux.push(moyeu);
+    });
+    // Train d'atterrissage : deux patins relevés aux bouts, quatre jambes (22)
+    for (const x of [0.3, -0.3]) {
+      chaine([[-0.55, -0.44], [-0.4, -0.5], [0, -0.5], [0.4, -0.5], [0.55, -0.44]].map(([z, y]) => pt(x * 1.15, y, z)));
+      for (const z of [0.25, -0.25]) chaine([pt(x * 0.6, -0.1, z), pt(x * 0.95, -0.3, z * 1.1), pt(x * 1.15, -0.5, z * 1.3)]);
+    }
+    // Nacelle : étrier (5), caméra et objectif (6 × 8)
+    const haut = pt(0, -0.16, 0.3);
+    for (const x of [0.14, -0.14]) chaine([haut, pt(x, -0.2, 0.34), pt(x, -0.32, 0.36)]);
+    peau(tourner([0, -0.32, 0], AZ, AX, AY, [[0.26, 0.07], [0.3, 0.1], [0.42, 0.1], [0.46, 0.07], [0.5, 0.055], [0.54, 0.055]], 8));
+    // Batterie sur le dos (12), antennes (6), capteurs avant (2), balise (2)
+    const bat = [-0.28, -0.04, 0.2].map((z) => [[0.13, 0.24], [-0.13, 0.24], [-0.13, 0.17], [0.13, 0.17]].map(([x, y]) => pt(x, y, z)));
+    bat.forEach(boucle); lier(bat[0], bat[1]); lier(bat[1], bat[2]);
+    for (const x of [0.1, -0.1]) chaine([pt(x, 0.17, -0.34), pt(x * 1.4, 0.34, -0.42), pt(x * 1.8, 0.5, -0.5)]);
+    ar(pt(0.12, 0.02, 0.56), pt(-0.12, 0.02, 0.56));
+    chaine([pt(0, 0.24, 0.1), pt(0, 0.36, 0.1)]);
+    return { P: o.P, A: o.A, lime: moyeux[0], orange: moyeux[2] };
+  }
+
+  /* ---------- 4. Appariement : quel point de la sphère devient quel point du bras ou du drone ---------- */
+  // Les n points de la forme prennent les n premiers points de la sphère (les plus anciens), en respectant l'ordre de la clé.
+  function apparier(repos, cle, forces) {
+    const n = repos.length;
+    const ordreF = repos.map((p, i) => [cle(p), i]).sort((a, b) => a[0] - b[0]).map((x) => x[1]);
+    const ordreS = GEO.V.slice(0, n).map((p, i) => [cle(p), i]).sort((a, b) => a[0] - b[0]).map((x) => x[1]);
+    const perm = new Array(n);
+    ordreF.forEach((f, k) => { perm[f] = ordreS[k]; });
+    for (const [f, particule] of forces) { const j = perm.indexOf(particule); [perm[f], perm[j]] = [perm[j], perm[f]]; }
+    return perm;
+  }
+  const reposBras = brasForme([1.1, 1.5], true), reposDrone = droneForme(0, true);
+  const K1 = reposBras.P.length, K2 = reposDrone.P.length; // 423 et 553
+  const permBras = apparier(reposBras.P, (p) => p[1] * 10 + p[0], [[reposBras.lime, LIME], [reposBras.orange, ORANGE]]);
+  const permDrone = apparier(reposDrone.P, (p) => p[0] * 10 + p[2], [[reposDrone.lime, LIME], [reposDrone.orange, ORANGE]]);
+  const versParticules = (aretes, perm) => aretes.map(([a, b]) => [perm[a], perm[b]]);
+  // Les points pas encore nés attendent sur un point de la forme en cours : ils en sortiront à l'étape suivante.
+  const loger = (S, perm, n) => { for (let p = n; p < N; p++) S[p] = S[perm[(p * 7) % n]]; return S; };
+
+  /* ---------- 5. État, pointeur, canvas ---------- */
+  const cv = document.getElementById("forme");
+  const ctx = cv.getContext("2d");
+  const bulle = document.getElementById("bulle");
+  const compteur = document.querySelector(".note");
+  const reduit = window.matchMedia("(prefers-reduced-motion: reduce)");
+  const mobile = window.matchMedia("(max-width: 860px)");
+  let vw = 0, vh = 0, dpr = 1;
+  const taille = () => {
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    vw = window.innerWidth; vh = window.innerHeight;
+    cv.width = Math.round(vw * dpr); cv.height = Math.round(vh * dpr);
+  };
+  taille();
+  window.addEventListener("resize", taille);
+
+  let px = -1, py = -1, dernierGeste = -1e9; // pointeur en px ; -1 = absent ou tactile
+  window.addEventListener("pointermove", (e) => {
+    if (e.pointerType === "touch") return;
+    px = e.clientX; py = e.clientY; dernierGeste = performance.now();
+  });
+  document.documentElement.addEventListener("pointerleave", () => { px = py = -1; });
+  let mx = 0, my = 0;           // pointeur lissé, de -1 à 1
+  let cibleBras = [1.1, 1.5];   // cible lissée du bras, dans son repère
+  let inclinaison = [0, 0];     // assiette lissée du drone
+  let droneX = null;            // abscisse du drone à l'écran, pilotée par la souris
+  let sAff = -1, tPrec = 0, affiche = -1;
+  // Couleurs de la forme, lues dans les variables de la page : elles suivent donc la palette choisie.
+  const C = { fonce: "#0b3c49", accent: "#c5f04a", accent2: "#ff8a3d", accentRvb: [197, 240, 74] };
+  const lireCouleurs = () => {
+    const st = getComputedStyle(document.documentElement), v = (n) => st.getPropertyValue(n).trim();
+    C.fonce = v("--duck-900") || C.fonce; C.accent = v("--lime") || C.accent; C.accent2 = v("--orange") || C.accent2;
+    const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(C.accent); if (m) C.accentRvb = [1, 2, 3].map((i) => parseInt(m[i], 16));
+  };
+  lireCouleurs(); window.__couleursForme = lireCouleurs;
+  let elan = 0, tour = 0;       // second état du hero : 0 au repos, 1 quand la pastille est survolée ; tour = rotation gagnée
+
+  const projeter = (x, y, z, cx, cy, ech, D) => { const f = D / (D + z); return [cx + x * ech * f, cy - y * ech * f, z]; };
+  const tourY = ([x, y, z], a) => { const c = Math.cos(a), s = Math.sin(a); return [x * c + z * s, y, -x * s + z * c]; };
+  const tourX = ([x, y, z], a) => { const c = Math.cos(a), s = Math.sin(a); return [x, y * c - z * s, y * s + z * c]; };
+  const tourZ = ([x, y, z], a) => { const c = Math.cos(a), s = Math.sin(a); return [x * c - y * s, x * s + y * c, z]; };
+
+  const sphereEcran = (souffle) => (r, t) => {
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2, ech = (r.width / 2) * 0.8;
+    const amp = amplitude(t) * souffle, ry = t * 0.18 + tour + mx * 0.55, rx = 0.35 + my * 0.28;
+    return GEO.V.map((p) => {
+      const k = respiration(p, t, amp);
+      const q = tourX(tourY([p[0] * k, p[1] * k, p[2] * k], ry), -rx);
+      return projeter(q[0], q[1], q[2], cx, cy, ech, 3.4);
+    });
+  };
+
+  /* Chaque forme rend, pour les 162 points, leur position à l'écran, une profondeur de -1 (devant) à 1, et combien sont nés. */
+  const FORMES = {
+    sphere: { aretes: GEO.A1, n: GEO.nb1, opacite: 1, fond: 0.2, pousse: 1, grain: 1, ecran: sphereEcran(1) },
+    // La sphère du contact : la même, bien plus riche (642 points), et plus stable.
+    retour: { aretes: GEO.A2, n: N, opacite: 0.8, fond: 0.2, pousse: 0.1, grain: 0.25, ecran: sphereEcran(0.08) },
+    bras: {
+      aretes: versParticules(reposBras.A, permBras), n: K1, opacite: 0.21, fond: 0.7, pousse: 0, grain: 0, bulle: false,
+      ecran(r, t, dt) {
+        const m = mobile.matches;
+        const ech = r.height / (m ? 3 : 2.45), ox = r.left + r.width * 0.34, oy = r.bottom - 6;
+        const lacet = -0.5 + 0.08 * Math.sin(t * 0.4);
+        // Cible : le curseur s'il est là et récent, sinon un geste de prise et dépose qui tourne tout seul.
+        let cible = [1.0 + 0.45 * Math.sin(t * 0.55), 1.5 + 0.4 * Math.sin(t * 0.41 + 1)];
+        if (px >= 0 && performance.now() - dernierGeste < 5000 && !reduit.matches) {
+          // Position du curseur dans le repère du bras, perspective et rotation comprises.
+          const D = 7, A = (px - ox) / ech, c = Math.cos(lacet), sn = Math.sin(lacet);
+          const X = (A * D) / (c * D + A * sn), Y = ((oy - py) / ech) * ((D - X * sn) / D);
+          cible = poignetPour([Math.max(X, 0.55), Math.max(Y, 0.35)]); // le bras travaille devant son socle, jamais replié derrière
+        }
+        const k = suivre(dt, 4.5);
+        cibleBras = [mix(cibleBras[0], cible[0], k), mix(cibleBras[1], cible[1], k)];
+        const F = brasForme(cibleBras, false);
+        const S = new Array(N);
+        F.P.forEach((p, i) => { const q = tourY(p, lacet); const e = projeter(q[0], q[1], q[2], ox, oy, ech, 7); e[2] = p[2] / 0.34; S[permBras[i]] = e; });
+        return loger(S, permBras, K1);
+      },
+    },
+    drone: {
+      aretes: versParticules(reposDrone.A, permDrone), n: K2, opacite: 0.36, fond: 0.62, pousse: 0.15, grain: 0,
+      ecran(r, t, dt) {
+        const ech = Math.min(r.width, r.height * 1.9) / 3.4;
+        const repos = r.left + r.width / 2 + Math.sin(t * 0.6) * r.width * 0.05;
+        // La souris pilote le drone de gauche à droite : il rejoint l'abscisse du curseur et penche dans le virage.
+        const pilote = px >= 0 && !reduit.matches && !mobile.matches;
+        const viseX = pilote ? borne(px, vw * 0.14, vw * 0.88) : repos;
+        if (droneX === null) droneX = repos;
+        const avant = droneX;
+        droneX += (viseX - droneX) * suivre(dt, 2.4);
+        const vitesse = dt > 0 ? (droneX - avant) / dt : 0; // en px par seconde
+        const cx = droneX, cy = r.top + r.height / 2 + Math.sin(t * 1.7) * 7;
+        const vise = [borne(vitesse / 1100, -0.55, 0.55) + 0.05 * Math.sin(t * 0.8), pilote ? borne((py - cy) / 500, -1, 1) * 0.18 : 0.05 * Math.sin(t * 0.63)];
+        const k = suivre(dt, 5);
+        inclinaison = [mix(inclinaison[0], vise[0], k), mix(inclinaison[1], vise[1], k)];
+        const F = droneForme(t, false);
+        const S = new Array(N);
+        F.P.forEach((p, i) => {
+          let q = tourY(p, 0.5 + 0.2 * Math.sin(t * 0.25));
+          q = tourZ(q, -inclinaison[0]); q = tourX(q, inclinaison[1]); q = tourX(q, 0.46);
+          const e = projeter(q[0], q[1], q[2], cx, cy, ech, 6); e[2] = q[2] / 1.5; S[permDrone[i]] = e;
+        });
+        return loger(S, permDrone, K2);
+      },
+    },
+  };
+
+  // Décalage et retard propres à chaque point : le nuage se disperse un peu à mi-trajet, puis se recompose.
+  const ALEA = Array.from({ length: N }, (_, i) => { const a = (i * 2.399963) % TAU; return [Math.cos(a), Math.sin(a), ((i * 7) % N) / N]; });
+
+  const sections = [...document.querySelectorAll("[data-forme]")];
+  const formes = sections.map((s) => FORMES[s.dataset.forme] || FORMES.sphere);
+  // Une section peut porter deux repères (bureau et téléphone) : on prend celui qui est affiché.
+  const rectAncre = (s) => {
+    for (const a of s.querySelectorAll("[data-ancre]")) { const r = a.getBoundingClientRect(); if (r.width > 0) return r; }
+    return { left: 0, top: 0, width: 0, height: 0, bottom: 0 };
+  };
+
+  function dessiner(ms) {
+    const tReel = ms / 1000;
+    const dt = Math.min(Math.max(tReel - tPrec, 0), 0.1);
+    tPrec = tReel;
+    const t = reduit.matches ? 13.46 : tReel;
+    // Élan : la sphère accélère sa rotation et ses traits passent au vert tant que la pastille du hero est survolée.
+    elan += ((window.__elanCible || 0) - elan) * suivre(dt, 5);
+    if (!reduit.matches) tour += dt * elan * 1.5;
+
+    // Progression : une forme se transforme en la suivante pendant que la section suivante monte dans l'écran.
+    let s = 0;
+    if (!reduit.matches) {
+      const y = window.scrollY;
+      for (let i = 1; i < sections.length; i++) {
+        // La métamorphose commence quand le repère de la section suivante entre dans le bas de l'écran, jamais avant tout défilement.
+        const debut = Math.max(rectAncre(sections[i]).top + y - vh * 0.92, 30);
+        s += borne((y - debut) / (vh * 0.62));
+      }
+    }
+    sAff = sAff < 0 ? s : sAff + (s - sAff) * suivre(dt, 3.2);
+    mx += ((px < 0 ? 0 : (px / vw) * 2 - 1) - mx) * suivre(dt, 2.4);
+    my += ((py < 0 ? 0 : (py / vh) * 2 - 1) - my) * suivre(dt, 2.4);
+
+    const i0 = Math.min(Math.floor(sAff), formes.length - 1), i1 = Math.min(i0 + 1, formes.length - 1);
+    const u = i0 === i1 ? 0 : sAff - i0;
+    const A = formes[i0], B = formes[i1];
+    const eA = A.ecran(rectAncre(sections[i0]), t, dt);
+    const eB = u > 0.001 ? B.ecran(rectAncre(sections[i1]), t, dt) : eA;
+
+    // Les traits sont rangés par niveau d'opacité puis tracés d'un seul geste par niveau : des milliers de traits sans ralentir.
+    const NIV = 10;
+    const lots = Array.from({ length: NIV }, () => []), lueurs = Array.from({ length: NIV }, () => []);
+    const pousser = (dans, x1, y1, x2, y2, alpha) => { if (alpha >= 0.03) dans[Math.min(NIV - 1, Math.floor(Math.min(alpha, 0.999) * NIV))].push(x1, y1, x2, y2); };
+    // Un trait se rétracte dans ses deux extrémités (part de 1 à 0) ou en repousse (de 0 à 1) : il ne flotte jamais seul.
+    const ranger = (dans, a, b, part, alpha) => {
+      if (alpha < 0.03 || part < 0.01) return;
+      if (part > 0.995) { pousser(dans, a[0], a[1], b[0], b[1], alpha); return; }
+      const hx = ((b[0] - a[0]) / 2) * part, hy = ((b[1] - a[1]) / 2) * part;
+      pousser(dans, a[0], a[1], a[0] + hx, a[1] + hy, alpha); pousser(dans, b[0], b[1], b[0] - hx, b[1] - hy, alpha);
+    };
+    // Relief : les traits de derrière sont plus pâles que ceux de devant. « fond » règle l'écart : 0,2 sur les sphères
+    // (relief marqué), 0,62 sur le bras et le drone (filaire clair et presque uniforme, pour passer sous les textes).
+    const profondeur = (z, fond) => fond + (1 - fond) * lisse(borne(0.5 - z * 0.5));
+
+    /*
+     * Transition en trois temps, pour ne jamais tirer un trait entre deux points qui voyagent :
+     *   1. les traits de l'ancienne forme se rétractent dans leurs points, du haut vers le bas ;
+     *   2. les points s'envolent en nuée, tous sur la même courbe, sans aucune traîne, et les nouveaux points naissent en vol ;
+     *   3. une fois posés, les traits de la nouvelle forme repoussent de point en point.
+     * Tout dépend de u seul : on peut s'arrêter ou revenir en arrière à n'importe quel moment, l'image reste propre.
+     */
+    const DEPART = 0.22, ETALEMENT = 0.14, VOL = 0.44;
+    const P = new Array(N), vie = new Float32Array(N), depart = new Float32Array(N);
+    let yMin = 1e9, yMax = -1e9;
+    if (u > 0) for (let p = 0; p < A.n; p++) { const y = eA[p][1]; if (y < yMin) yMin = y; if (y > yMax) yMax = y; }
+    const hauteurA = Math.max(yMax - yMin, 1);
+    const position = (p, k) => {
+      const dx = eB[p][0] - eA[p][0], dy = eB[p][1] - eA[p][1], arc = Math.sin(Math.PI * k) * 0.14;
+      return [mix(eA[p][0], eB[p][0], k) - dy * arc, mix(eA[p][1], eB[p][1], k) + dx * arc, mix(eA[p][2], eB[p][2], k)];
+    };
+    for (let p = 0; p < N; p++) {
+      if (u <= 0) { P[p] = [eA[p][0], eA[p][1], eA[p][2]]; vie[p] = p < A.n ? 1 : 0; continue; }
+      const rang = p < A.n ? (eA[p][1] - yMin) / hauteurA : ALEA[p][2];
+      depart[p] = DEPART + (0.75 * rang + 0.25 * ALEA[p][2]) * ETALEMENT;
+      const w = borne((u - depart[p]) / VOL), k = lisse(w);
+      P[p] = position(p, k);
+      vie[p] = mix(p < A.n ? 1 : 0, p < B.n ? 1 : 0, k);
+    }
+    // Pression du curseur : les points proches s'écartent (sphère surtout, pas le bras qui doit rester rigide).
+    const pousse = mix(A.pousse, B.pousse, u) * (u < 0.02 || u > 0.98 ? 1 : 0);
+    if (px >= 0 && pousse > 0.01 && !reduit.matches) {
+      for (const q of P) {
+        const dx = q[0] - px, dy = q[1] - py, d = Math.hypot(dx, dy) || 1, R = 150;
+        if (d < R) { const f = (1 - d / R) ** 2 * 14 * pousse; q[0] += (dx / d) * f; q[1] += (dy / d) * f; }
+      }
+    }
+
+    if (u <= 0) {
+      for (const [a, b] of A.aretes) ranger(lots, P[a], P[b], 1, A.opacite * profondeur((P[a][2] + P[b][2]) / 2, A.fond));
+    } else {
+      if (u < DEPART + ETALEMENT) for (const [a, b] of A.aretes) {
+        const part = 1 - lisse(borne(u / Math.min(depart[a], depart[b])));
+        if (part > 0.01) ranger(lots, P[a], P[b], part, A.opacite * (0.45 + 0.55 * part) * profondeur((P[a][2] + P[b][2]) / 2, A.fond));
+      }
+      if (u > DEPART + VOL) for (const [a, b] of B.aretes) {
+        const debut = Math.max(depart[a], depart[b]) + VOL, part = lisse(borne((u - debut) / (1 - debut)));
+        if (part > 0.01) ranger(lots, P[a], P[b], part, B.opacite * (0.45 + 0.55 * part) * profondeur((P[a][2] + P[b][2]) / 2, B.fond));
+      }
+    }
+
+    // Le compteur du prototype : combien de points sont nés.
+    const nes = Math.round(mix(A.n, B.n, lisse(borne((u - DEPART) / (VOL + ETALEMENT)))));
+    if (nes !== affiche && compteur) { affiche = nes; compteur.textContent = `Prototype · ${nes} points`; }
+
+    // Zones sombres à l'écran : la forme y est tracée en blanc, ailleurs en canard. Deux passes avec découpe.
+    const sombres = [...document.querySelectorAll("[data-sombre]")].map((el) => [el.getBoundingClientRect(), Number(el.dataset.sombre) || 0])
+      .filter(([r]) => r.bottom > 0 && r.top < vh);
+    const chemin = (inverse) => {
+      ctx.beginPath();
+      if (inverse) ctx.rect(0, 0, vw, vh);
+      for (const [r, ray] of sombres) { if (ctx.roundRect) ctx.roundRect(r.left, r.top, r.width, r.height, ray); else ctx.rect(r.left, r.top, r.width, r.height); }
+    };
+    // Lueur : les traits proches du curseur s'allument, seulement quand la forme est posée.
+    if (px >= 0 && !reduit.matches && (u < 0.03 || u > 0.97)) {
+      for (const [a, b] of (u < 0.5 ? A : B).aretes) {
+        const d = Math.hypot((P[a][0] + P[b][0]) / 2 - px, (P[a][1] + P[b][1]) / 2 - py);
+        if (d < 120) ranger(lueurs, P[a], P[b], 1, lisse(1 - d / 120) * (u < 0.5 ? A : B).opacite * 0.9);
+      }
+    }
+    const tracer = (dans, force) => {
+      for (let i = 0; i < NIV; i++) {
+        const l = dans[i]; if (!l.length) continue;
+        ctx.globalAlpha = Math.min(1, ((i + 0.6) / NIV) * force);
+        ctx.beginPath();
+        for (let j = 0; j < l.length; j += 4) { ctx.moveTo(l[j], l[j + 1]); ctx.lineTo(l[j + 2], l[j + 3]); }
+        ctx.stroke();
+      }
+    };
+    // Les points : bien présents sur la sphère et pendant le voyage, effacés sur le bras et le drone pour garder un filaire net.
+    const enVol = lisse(borne(u / 0.2)) * (1 - lisse(borne((u - 0.86) / 0.14)));
+    const grain = Math.min(1, mix(A.grain, B.grain, lisse(u)) + enVol);
+    const passe = (couleur, lueur, surSombre) => {
+      const force = surSombre ? 1 : 1.2; // sur blanc le trait fin paraît plus pâle : on compense un peu
+      ctx.lineCap = "round"; ctx.lineWidth = 1; ctx.strokeStyle = couleur; tracer(lots, force);
+      ctx.lineWidth = 1.6; ctx.strokeStyle = lueur; tracer(lueurs, 1);
+      if (grain > 0.02) {
+        ctx.fillStyle = couleur;
+        for (let p = 0; p < N; p++) {
+          if (p === LIME || p === ORANGE || vie[p] < 0.02) continue;
+          ctx.globalAlpha = Math.min(1, grain * vie[p] * (0.25 + 0.75 * profondeur(P[p][2], 0.2)) * force);
+          ctx.fillRect(P[p][0] - 1.25, P[p][1] - 1.25, 2.5, 2.5);
+        }
+      }
+    };
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, vw, vh);
+    const [lr, lv, lb] = C.accentRvb;
+    const clair = elan < 0.01 ? "#ffffff" : `rgb(${Math.round(mix(255, lr, elan))}, ${Math.round(mix(255, lv, elan))}, ${Math.round(mix(255, lb, elan))})`;
+    ctx.save(); chemin(false); ctx.clip(); passe(clair, C.accent, true); ctx.restore();
+    ctx.save(); chemin(true); ctx.clip("evenodd"); passe(C.fonce, C.fonce, false); ctx.restore();
+
+    // Les deux points d'accent, toujours nets : lime (conseil) et orange (formation), cerclés de canard pour tenir sur blanc.
+    // L'infobulle des deux points ne joue que sur une forme posée qui l'autorise : pas sur le bras, ni en plein vol.
+    const bulleOk = (u < 0.5 ? A : B).bulle !== false && (u < 0.03 || u > 0.97);
+    let survol = -1;
+    for (const [p, couleur] of [[LIME, C.accent], [ORANGE, C.accent2]]) {
+      const proche = bulleOk && px >= 0 && Math.hypot(P[p][0] - px, P[p][1] - py) < 30;
+      if (proche) survol = p;
+      const r = (proche ? 8 : 5) + 0.7 * Math.sin(t * 2 + p);
+      ctx.globalAlpha = 1; ctx.beginPath(); ctx.arc(P[p][0], P[p][1], r, 0, TAU);
+      ctx.fillStyle = couleur; ctx.fill(); ctx.lineWidth = 1.5; ctx.strokeStyle = C.fonce; ctx.stroke();
+    }
+    if (survol >= 0) {
+      const conseil = survol === LIME;
+      const html = `<i class="pt ${conseil ? "lime" : "orange"}"></i>${conseil ? "Conseil <span>pour la direction</span>" : "Formation <span>pour les équipes commerciales</span>"}`;
+      if (bulle.dataset.pour !== String(survol)) { bulle.innerHTML = html; bulle.dataset.pour = String(survol); }
+      const l = bulle.offsetWidth;
+      bulle.style.transform = `translate(${Math.round(borne(P[survol][0] + 16, 8, vw - l - 8))}px, ${Math.round(P[survol][1] - 44)}px)`;
+      bulle.classList.add("vue");
+    } else bulle.classList.remove("vue");
+
+    requestAnimationFrame(dessiner);
+  }
+  requestAnimationFrame(dessiner);
+  // Pour le contrôle du prototype : à quel défilement commence chaque transition.
+  window.__debuts = () => sections.slice(1).map((sec) => Math.max(rectAncre(sec).top + window.scrollY - window.innerHeight * 0.92, 30));
+  window.__forme = { K1, K2, N, a1: GEO.A1.length, a2: GEO.A2.length, aBras: reposBras.A.length, aDrone: reposDrone.A.length };
+  // Mesure de fluidité pour le contrôle du prototype : images par seconde sur la dernière seconde.
+  let img = 0, t0 = performance.now(); window.__ips = 0;
+  const compter = () => { img++; const n = performance.now(); if (n - t0 >= 1000) { window.__ips = Math.round((img * 1000) / (n - t0)); img = 0; t0 = n; } requestAnimationFrame(compter); };
+  requestAnimationFrame(compter);
+})();
+</script>
+
+<script>
+/* Boutons : on prépare le libellé qui roule et la flèche, puis l'effet d'aimant au survol. */
+(() => {
+  const fleche = '<span class="b-fl" aria-hidden="true"><svg viewBox="0 0 14 14"><path d="M2 7h10M8 3l4 4-4 4"/></svg></span>';
+  const fin = window.matchMedia("(hover: hover) and (pointer: fine)"), calme = window.matchMedia("(prefers-reduced-motion: reduce)");
+  for (const b of document.querySelectorAll(".bouton")) {
+    const t = b.textContent.trim();
+    b.setAttribute("aria-label", t);
+    b.innerHTML = `<span class="b-txt" aria-hidden="true"><span>${t}</span><span>${t}</span></span>${fleche}`;
+    b.addEventListener("pointermove", (e) => {
+      if (!fin.matches || calme.matches) return;
+      const r = b.getBoundingClientRect();
+      b.style.setProperty("--ax", (((e.clientX - r.left) / r.width - 0.5) * 12).toFixed(1) + "px");
+      b.style.setProperty("--ay", (((e.clientY - r.top) / r.height - 0.5) * 8).toFixed(1) + "px");
+    });
+    b.addEventListener("pointerleave", () => { b.style.setProperty("--ax", "0px"); b.style.setProperty("--ay", "0px"); });
+  }
+  // Pastille du hero : au survol ou au clavier, le hero passe dans son second état.
+  const hero = document.getElementById("hero"), pastille = document.querySelector("[data-elan]");
+  const blocHero = hero.querySelector(".bloc"), libelle = pastille && pastille.querySelector(".p-lib");
+  /*
+   * Les questions qui défilent dans le titre tant que la pastille est survolée. Trois lignes chacune.
+   * Les deux premières sont proposées par l'agence ; les trois suivantes reprennent les « tensions » de la présentation de la cliente.
+   */
+  const I = "\u00a0"; // espace insécable avant le point d'interrogation
+  const QUESTIONS = [
+    ["Vous cherchez", "à vous", "développer" + I + "?"],
+    ["Votre produit", "est viable mais", "ne scale pas" + I + "?"],
+    ["Votre croissance", "devient moins", "prévisible" + I + "?"],
+    ["Trop d'options,", "pas assez", "de priorités" + I + "?"],
+    ["Votre valeur", "technique est", "mal reconnue" + I + "?"],
+  ];
+  const lignes = [...hero.querySelectorAll(".roule .lg")];
+  let rang = -1, minuterie = 0;
+  // Chaque ligne roule : l'ancienne question sort par le haut, la nouvelle entre par le bas.
+  const montrer = (k) => lignes.forEach((lg, i) => {
+    const ancien = lg.querySelector(".b.la");
+    const neuf = document.createElement("span");
+    neuf.className = "b"; neuf.setAttribute("aria-hidden", "true"); neuf.textContent = QUESTIONS[k][i];
+    lg.appendChild(neuf); void neuf.offsetWidth; neuf.classList.add("la");
+    if (ancien) { ancien.classList.remove("la"); ancien.classList.add("parti"); setTimeout(() => ancien.remove(), 900); }
+  });
+  const ranger = () => { for (const b of hero.querySelectorAll(".roule .lg > .b")) { b.classList.remove("la"); setTimeout(() => b.remove(), 900); } };
+  window.__questions = { n: QUESTIONS.length, montrer };
+  const elancer = (oui) => {
+    if (oui === hero.classList.contains("elan")) return;
+    hero.classList.toggle("elan", oui); window.__elanCible = oui ? 1 : 0;
+    clearInterval(minuterie);
+    if (oui) {
+      rang = (rang + 1) % QUESTIONS.length; montrer(rang); // à chaque survol, on repart de la question suivante
+      if (!calme.matches) minuterie = setInterval(() => { rang = (rang + 1) % QUESTIONS.length; montrer(rang); }, 2600);
+    } else ranger();
+    // L'encoche du bloc s'ouvre à la largeur du bouton déroulé (disque 88 + marge du libellé 36 + libellé) plus 32 px d'air, comme au repos.
+    if (oui && libelle) blocHero.style.setProperty("--encoche", 88 + 36 + libelle.scrollWidth + 32 + "px"); else blocHero.style.removeProperty("--encoche");
+  };
+  if (pastille) {
+    pastille.addEventListener("pointerenter", (e) => { if (e.pointerType !== "touch") elancer(true); });
+    pastille.addEventListener("pointerleave", () => elancer(false));
+    pastille.addEventListener("focus", () => { if (pastille.matches(":focus-visible")) elancer(true); });
+    pastille.addEventListener("blur", () => elancer(false));
+  }
+
+  // Bloc contact : sur grand écran, l'encoche prend la largeur de la pastille déroulée ; sur téléphone, elle reste compacte.
+  const blocContact = document.querySelector("#contact .bloc"), large = window.matchMedia("(min-width: 861px)");
+  const pastilleContact = blocContact.querySelector(".niche a");
+  // largeur réelle de la pastille déroulée + 32 px d'air, comme dans le hero
+  const calerContact = () => { if (large.matches) blocContact.style.setProperty("--encoche", Math.ceil(pastilleContact.getBoundingClientRect().width) + 32 + "px"); else blocContact.style.removeProperty("--encoche"); };
+  calerContact(); window.addEventListener("resize", calerContact);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(calerContact);
+
+  // Panneau de prise de rendez-vous : ouvert par la pastille et par tous les boutons de contact.
+  const rdv = document.getElementById("rdv"), form = document.getElementById("rdv-form"), merci = rdv.querySelector(".rdv-merci");
+  const ouvrir = (e) => {
+    e.preventDefault();
+    form.hidden = false; merci.hidden = true;
+    rdv.showModal();
+    requestAnimationFrame(() => rdv.classList.add("ouvert"));
+    form.querySelector('input[name="nom"]').focus({ preventScroll: true });
+  };
+  const fermer = () => { rdv.classList.remove("ouvert"); setTimeout(() => rdv.close(), calme.matches ? 0 : 430); };
+  for (const el of document.querySelectorAll("[data-rdv]")) el.addEventListener("click", ouvrir);
+  rdv.querySelector(".rdv-fermer").addEventListener("click", fermer);
+  rdv.addEventListener("cancel", (e) => { e.preventDefault(); fermer(); }); // touche Échap
+  rdv.addEventListener("pointerdown", (e) => { // clic sur le fond assombri, à gauche du panneau
+    const r = rdv.getBoundingClientRect();
+    if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) fermer();
+  });
+  rdv.addEventListener("close", () => { if (pastille) elancer(pastille.matches(":hover")); });
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    if (form.elements.site_web.value) return; // champ piège rempli : un robot, on ne fait rien
+    form.hidden = true; merci.hidden = false; // prototype : rien n'est envoyé
+  });
+})();
+</script>
+
+<script>
+/*
+ * Couleurs de la maquette : cinq palettes au choix, dans le menu qui s'ouvre sous « À propos ».
+ * Une palette = quatre tons sombres (blocs), un fond clair, et deux accents (conseil, formation).
+ * Tout le site lit ces variables : blocs, boutons, logo, forme filaire, panneau de rendez-vous.
+ */
+(() => {
+  const PALETTES = [
+    { id: "canard", nom: "Canard et lime", note: "palette d'origine",
+      v: { "--duck-950": "#072c36", "--duck-900": "#0b3c49", "--duck-800": "#124b59", "--duck-700": "#1f5f6e", "--duck-50": "#f0f5f5", "--lime": "#c5f04a", "--lime-clair": "#d6f57e", "--orange": "#ff8a3d" } },
+    { id: "violet-corail", nom: "Violet et corail",
+      v: { "--duck-950": "#1c0558", "--duck-900": "#3a0aa6", "--duck-800": "#4a14c0", "--duck-700": "#6a35dc", "--duck-50": "#f5f1fd", "--lime": "#ff9f8e", "--lime-clair": "#ffb9ab", "--orange": "#ffd08a" } },
+    { id: "violet-givre", nom: "Violet et givre",
+      v: { "--duck-950": "#1f0a66", "--duck-900": "#4a1fd6", "--duck-800": "#5a30e6", "--duck-700": "#7c5cf5", "--duck-50": "#f1f4ff", "--lime": "#a6ecec", "--lime-clair": "#c4f4f4", "--orange": "#c3cbff" } },
+    { id: "lagon-menthe", nom: "Lagon et menthe",
+      v: { "--duck-950": "#071f2e", "--duck-900": "#0c3144", "--duck-800": "#114558", "--duck-700": "#1d6b7a", "--duck-50": "#eff7f6", "--lime": "#8ff0b4", "--lime-clair": "#b3f6cd", "--orange": "#6fd6ea" } },
+    { id: "nuit-aurore", nom: "Nuit et aurore",
+      v: { "--duck-950": "#020f26", "--duck-900": "#041e42", "--duck-800": "#0c2f6b", "--duck-700": "#1e22aa", "--duck-50": "#f1f3fa", "--lime": "#efbe7d", "--lime-clair": "#f5d3a3", "--orange": "#d6bfdd" } },
+  ];
+  const racine = document.documentElement, liste = document.getElementById("pal-liste");
+  const calme = window.matchMedia("(prefers-reduced-motion: reduce)");
+  const rvb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(" ");
+  const poser = (pal) => {
+    for (const [nom, valeur] of Object.entries(pal.v)) racine.style.setProperty(nom, valeur);
+    racine.style.setProperty("--lime-rvb", rvb(pal.v["--lime"]));     // pour le halo de la pastille
+    racine.style.setProperty("--nuit", rvb(pal.v["--duck-950"]));      // pour les voiles et les ombres
+    racine.dataset.palette = pal.id;
+    if (window.__couleursForme) window.__couleursForme();              // la forme filaire relit ses couleurs
+    for (const b of liste.children) b.setAttribute("aria-pressed", String(b.dataset.id === pal.id));
+    try { localStorage.setItem("maquette-palette", pal.id); } catch (e) { /* stockage indisponible : sans gravité */ }
+  };
+  // La nouvelle palette s'ouvre en cercle depuis le clic, quand le navigateur le permet.
+  const choisir = (pal, x, y) => {
+    if (!document.startViewTransition || calme.matches) { poser(pal); return; }
+    const rayon = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
+    document.startViewTransition(() => poser(pal)).ready.then(() => {
+      racine.animate({ clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${rayon}px at ${x}px ${y}px)`] },
+        { duration: 750, easing: "cubic-bezier(0.7, 0, 0.2, 1)", pseudoElement: "::view-transition-new(root)" });
+    }).catch(() => {});
+  };
+  for (const pal of PALETTES) {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "pal-choix"; b.dataset.id = pal.id; b.setAttribute("aria-pressed", "false");
+    b.innerHTML = `<span class="pastilles" aria-hidden="true">${["--duck-900", "--duck-700", "--lime", "--orange"].map((k) => `<i style="background:${pal.v[k]}"></i>`).join("")}</span><span>${pal.nom}</span><span class="coche" aria-hidden="true">✓</span>`;
+    b.addEventListener("click", (e) => { const r = b.getBoundingClientRect(); choisir(pal, e.clientX || r.left + 20, e.clientY || r.top + 20); if (e.detail > 0) b.blur(); });
+    liste.appendChild(b);
+  }
+  let depart = "canard";
+  try { depart = localStorage.getItem("maquette-palette") || depart; } catch (e) { /* idem */ }
+  poser(PALETTES.find((p) => p.id === depart) || PALETTES[0]);
+  window.__palettes = { liste: PALETTES.map((p) => p.id), poser: (id) => poser(PALETTES.find((p) => p.id === id)) };
+})();
+</script>
+</body>
+</html>
